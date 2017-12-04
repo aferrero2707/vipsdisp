@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=VIPS Image Viewer
+Comment=An image viewer based on VIPS
+Exec=vipsdisp
+Icon=vipsdisp
+Terminal=false
+Type=Application
+StartupNotify=true
+Categories=
+NoDisplay=true

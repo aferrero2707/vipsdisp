@@ -48,6 +48,7 @@ strip_binaries()
 export PATH=/$PREFIX/bin:/work/inst/bin:$PATH
 export LD_LIBRARY_PATH=/$PREFIX/lib:/work/inst/lib:$LD_LIBRARY_PATH
 export PKG_CONFIG_PATH=/$PREFIX/lib/pkgconfig:/work/inst/lib/pkgconfig:$PKG_CONFIG_PATH
+export ACLOCAL_PATH=/$PREFIX/share/aclocal:$ACLOCAL_PATH
 
 #(sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test && apt-get -y update && \
 (sudo apt-get -y update && sudo apt-get install -y wget curl fuse libfuse2 git) || exit 1
@@ -68,6 +69,8 @@ FLAGS="-g -O2 -march=nocona -mno-sse3 -mtune=generic -ftree-vectorize" CFLAGS="$
 make -j2 && sudo make install) || exit 1
 
 (cd /sources && ./bootstrap.sh && mkdir -p /sources/build/appimage && cd /sources/build/appimage && ../../configure --prefix="/$PREFIX" && make install) || exit 1
+(mkdir -p /$PREFIX/share/icons/hicolor/256x256/apps && cp /sources/vipsdisp.png /$PREFIX/share/icons/hicolor/256x256/apps) || exit 1
+(mkdir -p /$PREFIX/share/applications && cp /sources/vipsdisp.desktop /$PREFIX/share/applications) || exit 1
 
 #exit
 
@@ -162,7 +165,7 @@ chmod u+x usr/bin/$LOWERAPP
 
 
 # Copy deskop file and application icon
-(mkdir -p usr/share/applications/ && cp /$PREFIX/share/applications/rawtherapee.desktop usr/share/applications) || exit 1
+(mkdir -p usr/share/applications/ && cp /$PREFIX/share/applications/$LOWERAPP.desktop usr/share/applications) || exit 1
 (mkdir -p usr/share/icons && cp -r /$PREFIX/share/icons/hicolor usr/share/icons) || exit 1
 
 
@@ -244,13 +247,7 @@ fi
 mkdir -p usr/share
 cp -a /usr/share/mime usr/share
 
-(mkdir -p usr/share && cp -a /$PREFIX/share/rawtherapee usr/share) || exit 1
-
-/$PREFIX/bin/lensfun-update-data
-mkdir -p usr/share/lensfun/version_1
-cp -a /var/lib/lensfun-updates/version_1/* usr/share/lensfun/version_1
-echo "Contents of updated lensfun database:"
-ls usr/share/lensfun/version_1
+(mkdir -p usr/share && cp -a /$PREFIX/share/$LOWERAPP usr/share) # this might fail
 
 
 #cp -a /$PREFIX/lib/* usr/lib
