@@ -62,6 +62,11 @@ export LC_ALL=en_US.UTF-8
 #cd /work && wget https://cmake.org/files/v3.8/cmake-3.8.2.tar.gz && tar xzvf cmake-3.8.2.tar.gz && cd cmake-3.8.2 && ./bootstrap --prefix=/work/inst --parallel=2 && make -j 2 && make install
 #cd /work && wget https://downloads.sourceforge.net/lcms/lcms2-2.8.tar.gz && tar xzvf lcms2-2.8.tar.gz && cd lcms2-2.8 && ./configure --prefix=/app && make -j 2 && make install
 
+(cd /work && wget https://github.com/jcupitt/libvips/releases/download/v8.5.6/vips-8.5.6.tar.gz && \
+tar xzvf vips-8.5.6.tar.gz && cd vips-8.5.6 && ./autogen.sh && \
+FLAGS="-g -O2 -march=nocona -mno-sse3 -mtune=generic -ftree-vectorize" CFLAGS="${FLAGS}" CXXFLAGS="${FLAGS} -fpermissive" ./configure --prefix=/app --disable-gtk-doc --disable-gtk-doc-html --disable-introspection --enable-debug=no --without-python --without-magick --without-libwebp --enable-pyvips8=no --enable-shared=yes --enable-static=no && \
+make -j2 && sudo make install) || exit 1
+
 (cd /sources && ./bootstrap.sh && mkdir -p /sources/build/appimage && cd /sources/build/appimage && ../../configure --prefix="/$PREFIX" && make install) || exit 1
 
 #exit
