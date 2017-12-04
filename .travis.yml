@@ -1,0 +1,61 @@
+language: generic
+
+#env:
+matrix:
+    allow_failures:
+        - env: TARGET_SYSTEM=OSX
+        - env: TARGET_SYSTEM=Windows
+    include:
+        - os: linux
+          dist: trusty
+          compiler: g++
+          sudo: required
+          services: docker
+          env: TARGET_SYSTEM=Linux
+          before_script:
+                - travis_wait 120 sleep infinity & sudo docker pull photoflow/docker-trusty-gtk3
+                - sudo docker run -it -v $(pwd):/sources photoflow/docker-trusty-gtk3 bash /sources/ci/appimage.sh
+                - bash ci/appimage2.sh
+          after_success:
+              - cd $TRAVIS_BUILD_DIR
+              - pwd
+              - ls -lh
+              - ls -lh out/* # Assuming you have some files in out/ that you would like to upload
+              #- wget -c https://github.com/probonopd/uploadtool/raw/master/upload.sh
+              #- wget -c https://github.com/aferrero2707/uploadtool/raw/master/upload.sh
+              - wget -c https://github.com/aferrero2707/uploadtool/raw/master/upload_rotate.sh
+              - bash  ./upload_rotate.sh "continuous" out/*
+        - os: linux
+          dist: trusty
+          compiler: g++
+          sudo: required
+          dist: trusty
+          env: TARGET_SYSTEM=Windows
+          before_script:
+            #- cd non_existent_dir
+            - pwd
+          after_success:
+            - cd $TRAVIS_BUILD_DIR
+            - pwd
+        - os: osx
+          osx_image: xcode7.3
+          env: 
+          - TARGET_SYSTEM=OSX
+            PYTHON=/usr/local/bin/python
+            JPEG=/usr/local/opt/mozjpeg
+            PKG_CONFIG_PATH=/usr/local/opt/libffi/lib/pkgconfig
+            JOBS="`sysctl -n hw.ncpu`"
+            MACOSX_DEPLOYMENT_TARGET=10.8
+            HOMEBREW_NO_AUTO_UPDATE=1
+            PATH=$HOME/homebrew/opt/python/libexec/bin:$HOME/homebrew/bin:$PATH
+            LD_LIBRARY_PATH=$HOME/homebrew/lib:$LD_LIBRARY_PATH
+            PKG_CONFIG_PATH=$HOME/homebrew/lib/pkgconfig:$PKG_CONFIG_PATH
+          before_script:
+            - pwd
+
+
+branches:
+  except:
+    - # Do not build tags that we create when we upload to GitHub Releases
+    - /^(?i:continuous)$/
+    - /^(?i:unstable)$/
