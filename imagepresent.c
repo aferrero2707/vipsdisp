@@ -46,6 +46,8 @@ imagepresent_init( Imagepresent *imagepresent )
 {
 	printf( "imagepresent_init:\n" ); 
 
+	imagepresent->is_best_fit = FALSE;
+
 	gtk_widget_set_can_focus( GTK_WIDGET( imagepresent ), TRUE ); 
 }
 
@@ -125,7 +127,7 @@ imagepresent_get_display_image_size( Imagepresent *imagepresent,
 }
 
 void
-imagepresent_set_mag( Imagepresent *imagepresent, int mag )
+imagepresent_set_mag( Imagepresent *imagepresent, float mag )
 {
 	GtkAdjustment *hadj = gtk_scrolled_window_get_hadjustment( 
 		GTK_SCROLLED_WINDOW( imagepresent ) );
@@ -222,6 +224,8 @@ imagepresent_magin( Imagepresent *imagepresent, int x, int y )
 
 	printf( "imagepresent_magin: %d %d\n", x, y ); 
 
+	imagepresent->is_best_fit = FALSE;
+
 	/* Limit max mag to 512. We use int for image width and height, so 9
 	 * bits for magnification leaves us 22 for size, or about 4m x 4m
 	 * pixels. 
@@ -256,6 +260,8 @@ imagepresent_magout( Imagepresent *imagepresent )
 
 	printf( "imagepresent_magout:\n" ); 
 
+	imagepresent->is_best_fit = FALSE;
+
 	/* Don't let the image get too small.
 	 */
 	if( !imagepresent_get_display_image_size( imagepresent, 
@@ -284,6 +290,8 @@ imagepresent_bestfit( Imagepresent *imagepresent )
 
 	printf( "imagepresent_bestfit:\n" ); 
 
+	imagepresent->is_best_fit = TRUE;
+
 	if( imagepresent_get_image_size( imagepresent, 
 		&image_width, &image_height ) ) {
 		int window_left;
@@ -298,18 +306,22 @@ imagepresent_bestfit( Imagepresent *imagepresent )
 			&window_left, &window_top, 
 			&window_width, &window_height );
 		hfac = (double) window_width / image_width;
-		vfac = (double) window_width / image_height;
+		vfac = (double) window_height / image_height;
 		fac = VIPS_MIN( hfac, vfac );
 
+		printf("  hfac=%f vfac=%f fac=%f\n", hfac, vfac, fac);
+
 		if( fac >= 1 )
-			imagepresent_set_mag( imagepresent, (int) fac );
+			imagepresent_set_mag( imagepresent, (float) fac );
 		else
 			/* 0.999 means we don't round up on an exact fit.
 			 *
 			 * FIXME ... yuk
-			 */
-			imagepresent_set_mag( imagepresent, 
-				-((int) (0.99999999 + 1.0 / fac)) );
+      imagepresent_set_mag( imagepresent,
+        -((float) (0.99999999 + 1.0 / fac)) );
+       */
+		  imagepresent_set_mag( imagepresent,
+		      -((float) (1.f / fac)) );
 	}
 }
 
@@ -634,6 +646,24 @@ imagepresent_scroll_event( GtkWidget *widget, GdkEventScroll *event,
 	return( handled ); 
 }
 
+
+static void
+imagepresent_on_map (GtkWidget *widget, Imagepresent *imagepresent)
+{
+  imagepresent_bestfit( imagepresent );
+}
+
+
+static void
+imagepresent_on_configure (GtkWidget *widget,
+    GdkEvent  *event, Imagepresent *imagepresent)
+{
+  printf("imagepresent_on_configure: \n");
+  if( imagepresent->is_best_fit == TRUE )
+    imagepresent_bestfit( imagepresent );
+}
+
+
 Imagepresent *
 imagepresent_new( void ) 
 {
@@ -650,8 +680,11 @@ imagepresent_new( void )
 	 * there. We get the mouse position from (last_x, last_y), which we
 	 * record in the motion handler. 
 	 */
-	g_signal_connect( imagepresent, "key-press-event",
-		G_CALLBACK( imagepresent_key_press_event ), imagepresent ); 
+  g_signal_connect( imagepresent, "key-press-event",
+    G_CALLBACK( imagepresent_key_press_event ), imagepresent );
+
+  g_signal_connect( imagepresent, "map",
+    G_CALLBACK( imagepresent_on_map ), imagepresent );
 
 	g_signal_connect( imagepresent->imagedisplay, "button-press-event",
 		G_CALLBACK( imagepresent_button_press_event ), imagepresent ); 
@@ -661,11 +694,14 @@ imagepresent_new( void )
 		G_CALLBACK( imagepresent_button_release_event ), imagepresent );
 	g_signal_connect( imagepresent->imagedisplay, "scroll-event",
 		G_CALLBACK( imagepresent_scroll_event ), imagepresent );
+  g_signal_connect( imagepresent->imagedisplay, "configure-event",
+      G_CALLBACK( imagepresent_on_configure ), imagepresent );
 	gtk_widget_add_events( GTK_WIDGET( imagepresent->imagedisplay ),
 		GDK_POINTER_MOTION_MASK | 
 		GDK_BUTTON_PRESS_MASK | 
 		GDK_BUTTON_RELEASE_MASK | 
-		GDK_SCROLL_MASK );
+		GDK_SCROLL_MASK |
+		GDK_STRUCTURE_MASK);
 
 	/* Draw the focus indicator after rendering the image.
 	 */

@@ -3,7 +3,8 @@ typedef struct _Imagedisplay {
 	GtkDrawingArea parent_instance;
 
 	VipsImage *image;
-	int mag;
+	VipsImage **pyramid;
+	float mag;
 
 	/* A region on the input image for the status bar. 
 	 */
@@ -44,8 +45,8 @@ typedef struct _ImagedisplayClass {
 
 int imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file );
 
-void imagedisplay_set_mag( Imagedisplay *imagedisplay, int mag );
-int imagedisplay_get_mag( Imagedisplay *imagedisplay );
+void imagedisplay_set_mag( Imagedisplay *imagedisplay, float mag );
+float imagedisplay_get_mag( Imagedisplay *imagedisplay );
 
 gboolean imagedisplay_get_image_size( Imagedisplay *imagedisplay, 
 	int *width, int *height );

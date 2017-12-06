@@ -10,6 +10,8 @@
 
 #include "disp.h"
 
+#define USE_PYRAMID
+
 G_DEFINE_TYPE( Imagedisplay, imagedisplay, GTK_TYPE_DRAWING_AREA );
 
 /* Our signals. 
@@ -22,6 +24,14 @@ enum {
 };
 
 static guint imagedisplay_signals[SIG_LAST] = { 0 };
+
+
+static void
+free_mem_array (VipsObject *object, gpointer user_data)
+{
+  if( user_data ) free( user_data );
+}
+
 
 static void
 imagedisplay_empty( Imagedisplay *imagedisplay )
@@ -83,11 +93,11 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
 	cairo_surface_t *surface;
 
 	/*
-	 */
 	printf( "imagedisplay_draw_rect: "
 		"left = %d, top = %d, width = %d, height = %d\n",
 		expose->left, expose->top,
 		expose->width, expose->height );
+   */
 
 	/* Clip against the image size ... we don't want to try painting 
 	 * outside the image area.
@@ -147,9 +157,10 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
 		return;
 	}
 
+	/*
 	printf( "imagedisplay_paint_image: painting %d x %d pixels\n", 
 		clip.width, clip.height );
-
+  */
 	/* libvips is RGB, cairo is ARGB, we have to repack the data.
 	 */
 	cairo_buffer = g_malloc( clip.width * clip.height * 4 );
@@ -223,7 +234,8 @@ imagedisplay_init( Imagedisplay *imagedisplay )
 {
 	printf( "imagedisplay_init:\n" ); 
 
-	imagedisplay->mag = 1;
+  imagedisplay->pyramid = NULL;
+  imagedisplay->mag = 1;
 }
 
 static void
@@ -322,6 +334,28 @@ imagedisplay_render_notify( VipsImage *image, VipsRect *rect, void *client )
 	}
 }
 
+
+static int
+get_pyramid_level( Imagedisplay *imagedisplay, float* mag )
+{
+  int level = 0, mag2 = 1, i;
+  printf("get_pyramid_level: mag=%f\n", -imagedisplay->mag);
+  while(mag2*2 < -imagedisplay->mag) {
+    level += 1;
+    mag2 *= 2;
+    printf("get_pyramid_level: level=%d mag2=%d\n", level, mag2);
+  }
+  printf("get_pyramid_level: mag=%f level=%d\n", -imagedisplay->mag, level);
+  mag2 = 1;
+  for(i = 0; i <= level; i++) {
+    if( !(imagedisplay->pyramid[i]) ) break;
+    if( i>0 ) mag2 *= 2;
+  }
+  if( mag ) *mag = mag2;
+  return(i-1);
+}
+
+
 /* Make the screen image. This is the thing we display pixel values from in
  * the status bar.
  */
@@ -335,18 +369,43 @@ imagedisplay_display_image( Imagedisplay *imagedisplay, VipsImage *in )
 	 * work.
 	 */
 	image = in;
-	g_object_ref( image ); 
+#ifndef USE_PYRAMID
+	g_object_ref( image );
+#endif
 
 	if( imagedisplay->mag < 0 ) {
-		if( vips_subsample( image, &x, 
-			-imagedisplay->mag, -imagedisplay->mag, NULL ) ) {
+#ifndef USE_PYRAMID
+	  if( vips_subsample( image, &x,
+	      (int)-imagedisplay->mag, (int)-imagedisplay->mag, NULL ) ) {
+	    g_object_unref( image );
+	    return( NULL );
+	  }
+#else
+	  float mag2;
+	  int level = get_pyramid_level( imagedisplay, &mag2 );
+	  if(level < 0) {
+	    return NULL;
+	  }
+    image = imagedisplay->pyramid[level];
+	  g_object_ref( image );
+    printf("imagedisplay_display_image: level=%d mag2=%f\n", level, mag2);
+
+	  float resizefac = -mag2 / imagedisplay->mag;
+    printf("imagedisplay_display_image: pyrmid level: %dx%d resizefac=%f\n",
+        image->Xsize, image->Ysize, resizefac);
+
+		if( vips_resize( image, &x, resizefac, NULL ) ) {
 			g_object_unref( image );
 			return( NULL ); 
 		}
 		g_object_unref( image );
+#endif
 		image = x;
 	}
 	else { 
+#ifdef USE_PYRAMID
+	  g_object_ref( image );
+#endif
 		if( vips_zoom( image, &x, 
 			imagedisplay->mag, imagedisplay->mag, NULL ) ) {
 			g_object_unref( image );
@@ -549,7 +608,85 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 			return( -1 );
 		}
 
-		imagedisplay_attach_progress( imagedisplay ); 
+    int width = imagedisplay->image->Xsize;
+    int height = imagedisplay->image->Xsize;
+    int size;
+
+    if(imagedisplay->pyramid) {
+      int i = 0;
+      while(imagedisplay->pyramid[i]) {
+        VIPS_UNREF(imagedisplay->pyramid[i]);
+      }
+      g_free(imagedisplay->pyramid);
+    }
+
+    int level = 1;
+    while(width > 256 || height > 256) {
+      level += 1;
+      width /= 2;
+      height /= 2;
+    }
+
+    imagedisplay->pyramid = g_malloc(sizeof(VipsImage*)*(level+1));
+
+    g_object_ref(imagedisplay->image);
+    imagedisplay->pyramid[0] = imagedisplay->image;
+    imagedisplay->pyramid[level] = NULL;
+
+    printf("Computing pyramid levels...");
+
+    int li; for(li = 1; li < level; li++) {
+      VipsImage* scaled;
+      if( vips_shrink( imagedisplay->pyramid[li-1], &scaled, 2, 2, NULL ) ) {
+        imagedisplay->pyramid[li] = NULL;
+        break;
+      }
+
+      width = scaled->Xsize;
+      height = scaled->Ysize;
+      size = (width>height) ? width : height;
+
+      size_t imgsz = VIPS_IMAGE_SIZEOF_PEL(scaled)*width*height;
+      size_t imgmax = 500*1024*1024;
+      int memory_storage = (imgsz < imgmax) ? 1 : 0;
+      int fd = -1;
+      char fname[500]; fname[0] = '\0';
+
+      VipsImage* out;
+
+      if( memory_storage ) {
+        size_t array_sz;
+        void* mem_array = vips_image_write_to_memory( scaled, &array_sz );
+
+        out = vips_image_new_from_memory( mem_array, array_sz, width, height, scaled->Bands, scaled->BandFmt );
+        g_signal_connect( out, "postclose", G_CALLBACK(free_mem_array), mem_array );
+
+        VIPS_UNREF( scaled );
+      } else {
+        char* tempName = vips__temp_name("%s.v");
+
+        vips_image_write_to_file(scaled, tempName, 0);
+        VIPS_UNREF(scaled);
+
+        out = vips_image_new_from_file(tempName, 0);
+        vips_image_set_delete_on_close(imagedisplay->pyramid[li], TRUE);
+
+        g_free(tempName);
+        g_assert(out);
+      }
+
+      vips_copy( out, &(imagedisplay->pyramid[li]),
+          "format", imagedisplay->image->BandFmt,
+           "bands", imagedisplay->image->Bands,
+           "coding", imagedisplay->image->Coding,
+           "interpretation", imagedisplay->image->Type,
+           NULL );
+      VIPS_UNREF( out );
+    }
+
+    printf(" done\n");
+
+    imagedisplay_attach_progress( imagedisplay );
 	}
 
 	imagedisplay_update_conversion( imagedisplay );
@@ -557,14 +694,14 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 	return( 0 );
 }
 
-int
+float
 imagedisplay_get_mag( Imagedisplay *imagedisplay )
 {
 	return( imagedisplay->mag );
 }
 
 void
-imagedisplay_set_mag( Imagedisplay *imagedisplay, int mag )
+imagedisplay_set_mag( Imagedisplay *imagedisplay, float mag )
 {
 	if( mag > -600 &&
 		mag < 1000000 &&

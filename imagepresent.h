@@ -25,6 +25,10 @@ typedef struct _Imagepresent {
 	int last_x;
 	int last_y;
 
+  /* Wether the visualization is in best-fit mode or not.
+   */
+	gboolean is_best_fit;
+
 	/* Current state.
 	 */
 	ImagepresentState state;
@@ -50,7 +54,7 @@ void imagepresent_get_window_position( Imagepresent *imagepresent,
 gboolean imagepresent_get_image_size( Imagepresent *imagepresent, 
 	int *width, int *height );
 
-void imagepresent_set_mag( Imagepresent *imagepresent, int mag );
+void imagepresent_set_mag( Imagepresent *imagepresent, float mag );
 void imagepresent_magin( Imagepresent *imagepresent, int x, int y );
 void imagepresent_magout( Imagepresent *imagepresent );
 void imagepresent_bestfit( Imagepresent *imagepresent );
