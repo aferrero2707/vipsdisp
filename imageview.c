@@ -387,6 +387,35 @@ imageview_postload( Imagedisplay *imagedisplay,
 	gtk_widget_hide( imageview->progress_info );
 }
 
+
+static gboolean delete_event_cb( GtkWidget *widget,
+                              GdkEvent  *event,
+                              gpointer   data )
+{
+    /* If you return FALSE in the "delete-event" signal handler,
+     * GTK will emit the "destroy" signal. Returning TRUE means
+     * you don't want the window to be destroyed.
+     * This is useful for popping up 'are you sure you want to quit?'
+     * type dialogs. */
+
+    g_print ("delete event occurred\n");
+
+    /* Change TRUE to FALSE and the main window will be destroyed with
+     * a "delete-event". */
+
+    return FALSE;
+}
+
+/* Another callback */
+static void destroy_cb( GtkWidget *widget,
+                     GApplication*   application )
+{
+  g_print ("quitting the gtk application\n");
+
+  g_application_quit (application);
+}
+
+
 Imageview *
 imageview_new( GtkApplication *application, GFile *file )
 {
@@ -411,6 +440,20 @@ imageview_new( GtkApplication *application, GFile *file )
 	g_action_map_add_action_entries( G_ACTION_MAP( imageview ), 
 		imageview_entries, G_N_ELEMENTS( imageview_entries ), 
 		imageview );
+
+  /* When the window is given the "delete-event" signal (this is given
+   * by the window manager, usually by the "close" option, or on the
+   * titlebar), we ask it to call the delete_event () function
+   * as defined above. The data passed to the callback
+   * function is NULL and is ignored in the callback function. */
+  g_signal_connect (imageview, "delete-event",
+        G_CALLBACK (delete_event_cb), NULL);
+
+  /* Here we connect the "destroy" event to a signal handler.
+   * This event occurs when we call gtk_widget_destroy() on the window,
+   * or if we return FALSE in the "delete-event" callback. */
+  g_signal_connect (imageview, "destroy",
+        G_CALLBACK (destroy_cb), application);
 
 	imageview->disp = disp;
 
@@ -531,7 +574,7 @@ imageview_new( GtkApplication *application, GFile *file )
 		&width, &height ) )  
 		gtk_window_set_default_size( GTK_WINDOW( imageview ), 
 			VIPS_MIN( 800, width ),
-			VIPS_MIN( 800, height + 83 ) ); 
+			VIPS_MIN( 600, height + 83 ) );
 
 	g_signal_connect( imageview->imagepresent, "position_changed", 
 		G_CALLBACK( imageview_position_changed ), imageview );

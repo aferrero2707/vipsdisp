@@ -33,6 +33,28 @@ free_mem_array (VipsObject *object, gpointer user_data)
 }
 
 
+static int
+vips_copy_metadata( VipsImage* in, VipsImage* out )
+{
+  if( !out ) return 0;
+  int Xsize = out->Xsize;
+  int Ysize = out->Ysize;
+  int bands = out->Bands;
+  VipsBandFormat fmt = out->BandFmt;
+  VipsCoding coding = out->Coding;
+  VipsInterpretation type = out->Type;
+  gdouble xres = out->Xres;
+  gdouble yres = out->Yres;
+  VipsImage* invec[2] = {in, NULL};
+  vips__image_copy_fields_array( out, invec );
+  vips_image_init_fields( out,
+      Xsize, Ysize, bands, fmt,
+      coding, type, xres, yres
+      );
+return 0;
+}
+
+
 static void
 imagedisplay_empty( Imagedisplay *imagedisplay )
 {
@@ -436,21 +458,38 @@ imagedisplay_srgb_image( Imagedisplay *imagedisplay, VipsImage *in,
 	/* This won't work for CMYK, you need to mess about with ICC profiles
 	 * for that, but it will work for everything else.
 	 */
-	if( vips_colourspace( image, &x, VIPS_INTERPRETATION_sRGB, NULL ) ) {
+	if( vips_icc_transform_float( image, &x, "sRGB-elle-V2-srgbtrc.icc", NULL ) ) {
 		g_object_unref( image );
+	  printf("vips_icc_transform failed.\n");
 		return( NULL ); 
 	}
-	g_object_unref( image );
+  printf("vips_icc_transform: image=%p x=%p\n", image, x);
+  //VIPS_UNREF( image );
 	image = x;
 
-	/* Drop any alpha.
+	/* Convert to uchar
+	 *
 	 */
-	if( vips_extract_band( image, &x, 0, "n", 3, NULL ) ) {
-		g_object_unref( image );
-		return( NULL ); 
-	}
-	g_object_unref( image );
-	image = x;
+  float norm = 255;
+
+  VipsImage* ucharimg;
+  if( vips_linear1(image, &ucharimg, norm, (float)0, "uchar", TRUE, NULL) ) {
+    vips_error( "imagedisplay",
+            "vips_linear1() failed" );
+    return( NULL );
+  }
+  //VIPS_UNREF(image);
+  image = ucharimg;
+
+
+  /* Drop any alpha.
+   */
+  if( vips_extract_band( image, &x, 0, "n", 3, NULL ) ) {
+    g_object_unref( image );
+    return( NULL );
+  }
+  g_object_unref( image );
+  image = x;
 
 	x = vips_image_new();
 	if( mask )
@@ -608,10 +647,30 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 			return( -1 );
 		}
 
+		/**/
+    float norm = 1;
+    switch(imagedisplay->image->BandFmt) {
+    case VIPS_FORMAT_UCHAR: norm = 1.f/255.f; break;
+    case VIPS_FORMAT_USHORT: norm = 1.f/USHRT_MAX; break;
+    case VIPS_FORMAT_UINT: norm = 1.f/UINT_MAX; break;
+    default: break;
+    }
+
+    VipsImage* floatimg;
+    if( vips_linear1(imagedisplay->image, &floatimg, norm, (float)0, NULL) ) {
+      vips_error( "imagedisplay",
+              "vips_linear1() failed" );
+      return -1;
+    }
+    VIPS_UNREF(imagedisplay->image);
+    imagedisplay->image = floatimg;
+    /**/
+
     int width = imagedisplay->image->Xsize;
     int height = imagedisplay->image->Xsize;
     int size;
 
+#ifdef USE_PYRAMID
     if(imagedisplay->pyramid) {
       int i = 0;
       while(imagedisplay->pyramid[i]) {
@@ -629,8 +688,8 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 
     imagedisplay->pyramid = g_malloc(sizeof(VipsImage*)*(level+1));
 
-    g_object_ref(imagedisplay->image);
-    imagedisplay->pyramid[0] = imagedisplay->image;
+    g_object_ref(floatimg);
+    imagedisplay->pyramid[0] = floatimg;
     imagedisplay->pyramid[level] = NULL;
 
     printf("Computing pyramid levels...");
@@ -660,29 +719,30 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 
         out = vips_image_new_from_memory( mem_array, array_sz, width, height, scaled->Bands, scaled->BandFmt );
         g_signal_connect( out, "postclose", G_CALLBACK(free_mem_array), mem_array );
-
-        VIPS_UNREF( scaled );
       } else {
         char* tempName = vips__temp_name("%s.v");
 
-        vips_image_write_to_file(scaled, tempName, 0);
-        VIPS_UNREF(scaled);
+        vips_image_write_to_file(scaled, tempName, 0, NULL);
 
-        out = vips_image_new_from_file(tempName, 0);
+        out = vips_image_new_from_file(tempName, 0, NULL);
         vips_image_set_delete_on_close(imagedisplay->pyramid[li], TRUE);
 
         g_free(tempName);
         g_assert(out);
       }
+      VIPS_UNREF(scaled);
 
       vips_copy( out, &(imagedisplay->pyramid[li]),
-          "format", imagedisplay->image->BandFmt,
-           "bands", imagedisplay->image->Bands,
-           "coding", imagedisplay->image->Coding,
-           "interpretation", imagedisplay->image->Type,
+          "format", floatimg->BandFmt,
+           "bands", floatimg->Bands,
+           "coding", floatimg->Coding,
+           "interpretation", floatimg->Type,
            NULL );
       VIPS_UNREF( out );
+
+      vips_copy_metadata(floatimg, imagedisplay->pyramid[li]);
     }
+#endif
 
     printf(" done\n");
 
@@ -706,7 +766,7 @@ imagedisplay_set_mag( Imagedisplay *imagedisplay, float mag )
 	if( mag > -600 &&
 		mag < 1000000 &&
 		imagedisplay->mag != mag ) { 
-		printf( "imagedisplay_set_mag: %d\n", mag ); 
+		printf( "imagedisplay_set_mag: %f\n", mag );
 
 		imagedisplay->mag = mag;
 		imagedisplay_update_conversion( imagedisplay );

@@ -11,7 +11,9 @@ vipsdisp_SOURCES = \
 	imagepresent.c \
 	imagepresent.h \
 	imagedisplay.c \
-	imagedisplay.h
+	imagedisplay.h \
+	icc_transform_float.c \
+	icc_transform_float.h
 
 AM_CPPFLAGS = @PKGFLAGS_CFLAGS@
 LDADD = @PKGFLAGS_CFLAGS@ @PKGFLAGS_LIBS@

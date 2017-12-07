@@ -139,7 +139,9 @@ imagepresent_set_mag( Imagepresent *imagepresent, float mag )
 	int width;
 	int height;
 
-	printf( "imagepresent_set_mag: %d\n", mag ); 
+	printf( "imagepresent_set_mag: %f\n", mag );
+
+  imagepresent->is_best_fit = FALSE;
 
 	/* We need to update last_x/_y ... go via image cods.
 	 */
@@ -188,6 +190,8 @@ imagepresent_set_mag_centre( Imagepresent *imagepresent, int mag )
 	int display_y;
 
 	printf( "imagepresent_set_mag_centre:\n" ); 
+
+  imagepresent->is_best_fit = FALSE;
 
 	imagepresent_get_window_position( imagepresent, 
 		&window_left, &window_top, &window_width, &window_height );
@@ -460,7 +464,8 @@ imagepresent_key_press_event( GtkWidget *widget, GdkEventKey *event,
 		break;
 
 	case GDK_KEY_i:
-	case GDK_KEY_plus:
+  case GDK_KEY_plus:
+  case GDK_KEY_equal:
 		imagedisplay_to_image_cods( imagepresent->imagedisplay,
 			imagepresent->last_x, imagepresent->last_y,
 			&image_x, &image_y ); 
@@ -477,7 +482,8 @@ imagepresent_key_press_event( GtkWidget *widget, GdkEventKey *event,
 		break;
 
 	case GDK_KEY_0:
-		imagepresent_bestfit( imagepresent ); 
+		imagepresent_bestfit( imagepresent );
+    //imagepresent_set_mag_centre( imagepresent, 1);
 
 		handled = TRUE;
 		break;
@@ -692,8 +698,8 @@ imagepresent_new( void )
 		G_CALLBACK( imagepresent_motion_notify_event ), imagepresent );
 	g_signal_connect( imagepresent->imagedisplay, "button-release-event",
 		G_CALLBACK( imagepresent_button_release_event ), imagepresent );
-	g_signal_connect( imagepresent->imagedisplay, "scroll-event",
-		G_CALLBACK( imagepresent_scroll_event ), imagepresent );
+	//g_signal_connect( imagepresent->imagedisplay, "scroll-event",
+	//	G_CALLBACK( imagepresent_scroll_event ), imagepresent );
   g_signal_connect( imagepresent->imagedisplay, "configure-event",
       G_CALLBACK( imagepresent_on_configure ), imagepresent );
 	gtk_widget_add_events( GTK_WIDGET( imagepresent->imagedisplay ),

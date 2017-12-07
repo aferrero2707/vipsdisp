@@ -10,6 +10,8 @@
 
 #include "disp.h"
 
+GType vips_icc_transform_float_get_type( void );
+
 G_DEFINE_TYPE( Disp, disp, GTK_TYPE_APPLICATION );
 
 static void
@@ -161,12 +163,16 @@ main( int argc, char **argv )
 	if( VIPS_INIT( argv[0] ) )
 		vips_error_exit( "unable to start VIPS" );
 
+	vips_icc_transform_float_get_type();
+
+	printf("VIPS cpmcurrency: %d\n", vips_concurrency_get());
+
 	g_log_set_always_fatal( 
 		G_LOG_FLAG_RECURSION |
 		G_LOG_FLAG_FATAL |
 		G_LOG_LEVEL_ERROR |
-		G_LOG_LEVEL_CRITICAL |
-		G_LOG_LEVEL_WARNING );
+		G_LOG_LEVEL_CRITICAL/* |
+		G_LOG_LEVEL_WARNING*/ );
 
 	disp = disp_new();
 
