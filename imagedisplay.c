@@ -10,7 +10,7 @@
 
 #include "disp.h"
 
-#define USE_PYRAMID
+//#define USE_PYRAMID
 
 G_DEFINE_TYPE( Imagedisplay, imagedisplay, GTK_TYPE_DRAWING_AREA );
 
@@ -120,12 +120,12 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
   expose_s.width = expose->width * imagedisplay->device_scale;
   expose_s.height = expose->height * imagedisplay->device_scale;
 
-	/**/
+	/*
 	printf( "imagedisplay_draw_rect: "
 		"left = %d, top = %d, width = %d, height = %d\n",
 		expose->left, expose->top,
 		expose->width, expose->height );
-   /**/
+  */
 
 	/* Clip against the image size ... we don't want to try painting 
 	 * outside the image area.
@@ -216,7 +216,7 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
 	cairo_surface_set_device_scale(surface, imagedisplay->device_scale, imagedisplay->device_scale);
   double x_scale, y_scale;
   cairo_surface_get_device_scale(surface, &x_scale, &y_scale);
-  printf("device scale: %f %f\n", (float)x_scale, (float)y_scale);
+  /*printf("device scale: %f %f\n", (float)x_scale, (float)y_scale);*/
 
   cairo_set_source_surface( cr, surface, clip.left, clip.top );
 
@@ -234,7 +234,7 @@ imagedisplay_draw( GtkWidget *widget, cairo_t *cr )
 {
 	Imagedisplay *imagedisplay = (Imagedisplay *) widget;
 
-	printf( "imagedisplay_draw:\n" );
+	/*printf( "imagedisplay_draw:\n" );*/
 
 	if( imagedisplay->srgb_region ) {
 		cairo_rectangle_list_t *rectangle_list = 
