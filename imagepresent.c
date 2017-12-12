@@ -294,8 +294,6 @@ imagepresent_bestfit( Imagepresent *imagepresent )
 
 	printf( "imagepresent_bestfit:\n" ); 
 
-	imagepresent->is_best_fit = TRUE;
-
 	if( imagepresent_get_image_size( imagepresent, 
 		&image_width, &image_height ) ) {
 		int window_left;
@@ -327,6 +325,8 @@ imagepresent_bestfit( Imagepresent *imagepresent )
 		  imagepresent_set_mag( imagepresent,
 		      -((float) (1.f / fac)) );
 	}
+
+  imagepresent->is_best_fit = TRUE;
 }
 
 char *
@@ -656,6 +656,9 @@ imagepresent_scroll_event( GtkWidget *widget, GdkEventScroll *event,
 static void
 imagepresent_on_map (GtkWidget *widget, Imagepresent *imagepresent)
 {
+  imagepresent->device_scale = 1; //gtk_widget_get_scale_factor (GTK_WIDGET (widget));
+  printf("imagepresent_on_map: device_scale=%f\n", imagepresent->device_scale);
+  imagepresent->imagedisplay->device_scale = imagepresent->device_scale;
   imagepresent_bestfit( imagepresent );
 }
 

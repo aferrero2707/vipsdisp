@@ -165,6 +165,7 @@ main( int argc, char **argv )
 
 	vips_icc_transform_float_get_type();
 
+	//vips_concurrency_set(1);
 	printf("VIPS cpmcurrency: %d\n", vips_concurrency_get());
 
 	g_log_set_always_fatal( 

@@ -1,10 +1,22 @@
 SUBDIRS = bp
 
-bin_PROGRAMS = vipsdisp
+bin_PROGRAMS = vipsdisp resize
 
 vipsdisp_SOURCES = \
 	disp-gresources.c \
 	disp.c \
+	disp.h \
+	imageview.c \
+	imageview.h \
+	imagepresent.c \
+	imagepresent.h \
+	imagedisplay.c \
+	imagedisplay.h \
+	icc_transform_float.c \
+	icc_transform_float.h
+
+resize_SOURCES = \
+	resize.c \
 	disp.h \
 	imageview.c \
 	imageview.h \

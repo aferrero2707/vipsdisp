@@ -29,6 +29,10 @@ typedef struct _Imagepresent {
    */
 	gboolean is_best_fit;
 
+  /* Hardware scaling factor for HiDPI displays
+   */
+	float device_scale;
+
 	/* Current state.
 	 */
 	ImagepresentState state;

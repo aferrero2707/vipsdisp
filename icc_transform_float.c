@@ -582,7 +582,7 @@ vips_icc_transform_float_build( VipsObject *object )
 	if( !(icc->trans = cmsCreateTransform( 
 		icc->in_profile, icc->in_icc_format,
 		icc->out_profile, icc->out_icc_format, 
-		icc->intent, cmsFLAGS_NOCACHE )) ) {
+		icc->intent, cmsFLAGS_NOOPTIMIZE | cmsFLAGS_NOCACHE )) ) {
 	  vips_error( class->nickname,
 	        "%s", _( "failed to create transform" ) );
     return( -1 );

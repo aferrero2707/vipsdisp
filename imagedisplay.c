@@ -114,12 +114,18 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
 	unsigned char *cairo_buffer;
 	cairo_surface_t *surface;
 
-	/*
+	VipsRect expose_s;
+  expose_s.top = expose->top * imagedisplay->device_scale;
+  expose_s.left = expose->left * imagedisplay->device_scale;
+  expose_s.width = expose->width * imagedisplay->device_scale;
+  expose_s.height = expose->height * imagedisplay->device_scale;
+
+	/**/
 	printf( "imagedisplay_draw_rect: "
 		"left = %d, top = %d, width = %d, height = %d\n",
 		expose->left, expose->top,
 		expose->width, expose->height );
-   */
+   /**/
 
 	/* Clip against the image size ... we don't want to try painting 
 	 * outside the image area.
@@ -128,7 +134,7 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
 	image.top = 0;
 	image.width = imagedisplay->srgb_region->im->Xsize;
 	image.height = imagedisplay->srgb_region->im->Ysize;
-	vips_rect_intersectrect( &image, expose, &clip );
+	vips_rect_intersectrect( &image, &expose_s, &clip );
 	if( vips_rect_isempty( &clip ) )
 		return;
 
@@ -207,11 +213,18 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
 	surface = cairo_image_surface_create_for_data( cairo_buffer, 
 		CAIRO_FORMAT_RGB24, clip.width, clip.height, clip.width * 4 );
 
-	cairo_set_source_surface( cr, surface, clip.left, clip.top );
+	cairo_surface_set_device_scale(surface, imagedisplay->device_scale, imagedisplay->device_scale);
+  double x_scale, y_scale;
+  cairo_surface_get_device_scale(surface, &x_scale, &y_scale);
+  printf("device scale: %f %f\n", (float)x_scale, (float)y_scale);
+
+  cairo_set_source_surface( cr, surface, clip.left, clip.top );
 
 	cairo_paint( cr );
 
-	g_free( cairo_buffer ); 
+
+
+  g_free( cairo_buffer );
 
 	cairo_surface_destroy( surface ); 
 }
@@ -221,7 +234,7 @@ imagedisplay_draw( GtkWidget *widget, cairo_t *cr )
 {
 	Imagedisplay *imagedisplay = (Imagedisplay *) widget;
 
-	//printf( "imagedisplay_draw:\n" ); 
+	printf( "imagedisplay_draw:\n" );
 
 	if( imagedisplay->srgb_region ) {
 		cairo_rectangle_list_t *rectangle_list = 
@@ -362,7 +375,7 @@ get_pyramid_level( Imagedisplay *imagedisplay, float* mag )
 {
   int level = 0, mag2 = 1, i;
   printf("get_pyramid_level: mag=%f\n", -imagedisplay->mag);
-  while(mag2*2 < -imagedisplay->mag) {
+  while(mag2*2 <= -imagedisplay->mag) {
     level += 1;
     mag2 *= 2;
     printf("get_pyramid_level: level=%d mag2=%d\n", level, mag2);
@@ -464,7 +477,7 @@ imagedisplay_srgb_image( Imagedisplay *imagedisplay, VipsImage *in,
 		return( NULL ); 
 	}
   printf("vips_icc_transform: image=%p x=%p\n", image, x);
-  //VIPS_UNREF( image );
+  VIPS_UNREF( image );
 	image = x;
 
 	/* Convert to uchar
@@ -664,6 +677,18 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
     }
     VIPS_UNREF(imagedisplay->image);
     imagedisplay->image = floatimg;
+
+
+    /* This won't work for CMYK, you need to mess about with ICC profiles
+     * for that, but it will work for everything else.
+     */
+    if( vips_icc_transform_float( imagedisplay->image, &floatimg, "Rec2020-elle-V4-g10.icc", NULL ) ) {
+      vips_error( "imagedisplay",
+              "vips_icc_transform_float() failed" );
+      return -1;
+    }
+    VIPS_UNREF(imagedisplay->image);
+    imagedisplay->image = floatimg;
     /**/
 
     int width = imagedisplay->image->Xsize;
@@ -769,6 +794,8 @@ imagedisplay_set_mag( Imagedisplay *imagedisplay, float mag )
 		printf( "imagedisplay_set_mag: %f\n", mag );
 
 		imagedisplay->mag = mag;
+		if( imagedisplay->mag < 0 ) imagedisplay->mag /= imagedisplay->device_scale;
+		else imagedisplay->mag *= imagedisplay->device_scale;
 		imagedisplay_update_conversion( imagedisplay );
 	}
 }

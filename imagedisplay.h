@@ -6,6 +6,10 @@ typedef struct _Imagedisplay {
 	VipsImage **pyramid;
 	float mag;
 
+  /* Hardware scaling factor for HiDPI displays
+   */
+	float device_scale;
+
 	/* A region on the input image for the status bar. 
 	 */
 	VipsRegion *image_region;
