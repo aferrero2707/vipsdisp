@@ -5,6 +5,10 @@
  */
 
 
+/* Has to be before VIPS to avoid nameclashes.
+ */
+#include <lcms2.h>
+
 #include <vips/vips.h>
 
 /**
@@ -44,5 +48,5 @@
  */
 int
 vips_icc_transform_float( VipsImage *in, VipsImage **out,
-	const char *output_profile, ... )
+    cmsHPROFILE output_profile, ... )
 __attribute__((sentinel));

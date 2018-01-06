@@ -86,10 +86,10 @@ imagepresent_get_window_position( Imagepresent *imagepresent,
 	GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment( 
 		GTK_SCROLLED_WINDOW( imagepresent ) );
 
-	*left = gtk_adjustment_get_value( hadj );
-	*top = gtk_adjustment_get_value( vadj );
-	*width = gtk_adjustment_get_page_size( hadj );
-	*height = gtk_adjustment_get_page_size( vadj );
+	*left = gtk_adjustment_get_value( hadj ) * imagepresent->device_scale;
+	*top = gtk_adjustment_get_value( vadj ) * imagepresent->device_scale;
+	*width = gtk_adjustment_get_page_size( hadj ) * imagepresent->device_scale;
+	*height = gtk_adjustment_get_page_size( vadj ) * imagepresent->device_scale;
 
 	printf( "imagepresent_get_window_position: %d %d %d %d\n", 
 		*left, *top, *width, *height ); 
@@ -106,8 +106,11 @@ imagepresent_set_window_position( Imagepresent *imagepresent,
 
 	printf( "imagepresent_set_window_position: %d %d\n", left, top ); 
 
-	gtk_adjustment_set_value( hadj, left );
-	gtk_adjustment_set_value( vadj, top );
+  float fleft = left; fleft /= imagepresent->device_scale;
+  float ftop = top; ftop /= imagepresent->device_scale;
+
+	gtk_adjustment_set_value( hadj, (int)(fleft) );
+	gtk_adjustment_set_value( vadj, (int)(ftop) );
 }
 
 gboolean
@@ -164,8 +167,8 @@ imagepresent_set_mag( Imagepresent *imagepresent, float mag )
 		&width, &height ) ) { 
 		printf( "imagepresent_set_mag: new size %d %d\n", 
 			width, height ); 
-		gtk_adjustment_set_upper( hadj, width );
-		gtk_adjustment_set_upper( vadj, height );
+		gtk_adjustment_set_upper( hadj, width / imagepresent->device_scale );
+		gtk_adjustment_set_upper( vadj, height / imagepresent->device_scale );
 	}
 
 	/* mag has changed.
@@ -189,7 +192,7 @@ imagepresent_set_mag_centre( Imagepresent *imagepresent, int mag )
 	int display_x;
 	int display_y;
 
-	printf( "imagepresent_set_mag_centre:\n" ); 
+	printf( "imagepresent_set_mag_centre: mag=%d\n", mag );
 
   imagepresent->is_best_fit = FALSE;
 
@@ -198,7 +201,7 @@ imagepresent_set_mag_centre( Imagepresent *imagepresent, int mag )
 
 	imagedisplay_to_image_cods( imagepresent->imagedisplay,
 		window_left + window_width / 2, window_top + window_height / 2,
-		&image_x, &image_y ); 
+		&image_x, &image_y );
 
 	imagepresent_set_mag( imagepresent, mag );
 
@@ -324,6 +327,8 @@ imagepresent_bestfit( Imagepresent *imagepresent )
        */
 		  imagepresent_set_mag( imagepresent,
 		      -((float) (1.f / fac)) );
+
+	  imagepresent_set_window_position( imagepresent, 0, 0 );
 	}
 
   imagepresent->is_best_fit = TRUE;
@@ -482,8 +487,8 @@ imagepresent_key_press_event( GtkWidget *widget, GdkEventKey *event,
 		break;
 
 	case GDK_KEY_0:
-		imagepresent_bestfit( imagepresent );
-    //imagepresent_set_mag_centre( imagepresent, 1);
+		//imagepresent_bestfit( imagepresent );
+    imagepresent_set_mag_centre( imagepresent, 1);
 
 		handled = TRUE;
 		break;
@@ -656,7 +661,7 @@ imagepresent_scroll_event( GtkWidget *widget, GdkEventScroll *event,
 static void
 imagepresent_on_map (GtkWidget *widget, Imagepresent *imagepresent)
 {
-  imagepresent->device_scale = 1; //gtk_widget_get_scale_factor (GTK_WIDGET (widget));
+  imagepresent->device_scale = gtk_widget_get_scale_factor (GTK_WIDGET (widget));
   printf("imagepresent_on_map: device_scale=%f\n", imagepresent->device_scale);
   imagepresent->imagedisplay->device_scale = imagepresent->device_scale;
   imagepresent_bestfit( imagepresent );

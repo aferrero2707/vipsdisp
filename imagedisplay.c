@@ -3,28 +3,39 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <gtk/gtk.h>
 
 #include <vips/vips.h>
 
+#include "colorspaces.h"
+
 #include "disp.h"
 
+
+
+
 //#define USE_PYRAMID
+#define USE_TILECACHE0
+//#define USE_TILECACHE
+#define CACHE_TS 64
 
 G_DEFINE_TYPE( Imagedisplay, imagedisplay, GTK_TYPE_DRAWING_AREA );
 
 /* Our signals. 
  */
 enum {
+	/* Our signals. 
+	 */
 	SIG_PRELOAD,
 	SIG_LOAD,
 	SIG_POSTLOAD,
+
 	SIG_LAST
 };
 
 static guint imagedisplay_signals[SIG_LAST] = { 0 };
-
 
 static void
 free_mem_array (VipsObject *object, gpointer user_data)
@@ -141,7 +152,14 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
 	g_assert( imagedisplay->srgb_region->im == imagedisplay->srgb ); 
 	g_assert( imagedisplay->mask_region->im == imagedisplay->mask ); 
 
-	/* Request pixels. We ask the mask first, to get an idea of what's 
+  /*
+  printf( "                  clip: "
+    "left = %d, top = %d, width = %d, height = %d\n",
+    clip.left, clip.top,
+    clip.width, clip.height );
+  */
+
+  /* Request pixels. We ask the mask first, to get an idea of what's
 	 * currently in cache, then request tiles of pixels. We must always
 	 * request pixels, even if the mask is blank, because the request
 	 * will trigger a notify later which will reinvoke us.
@@ -218,7 +236,9 @@ imagedisplay_draw_rect( Imagedisplay *imagedisplay,
   cairo_surface_get_device_scale(surface, &x_scale, &y_scale);
   /*printf("device scale: %f %f\n", (float)x_scale, (float)y_scale);*/
 
-  cairo_set_source_surface( cr, surface, clip.left, clip.top );
+  cairo_set_source_surface( cr, surface,
+      clip.left / imagedisplay->device_scale,
+      clip.top / imagedisplay->device_scale );
 
 	cairo_paint( cr );
 
@@ -271,6 +291,7 @@ imagedisplay_init( Imagedisplay *imagedisplay )
 
   imagedisplay->pyramid = NULL;
   imagedisplay->mag = 1;
+  imagedisplay->device_scale = 1;
 }
 
 static void
@@ -335,10 +356,20 @@ imagedisplay_render_cb( ImagedisplayUpdate *update )
 	/* Again, stuff can run here long after the image has vanished, check
 	 * before we update.
 	 */
+
+  /*
+  printf( "imagedisplay_render_cb: "
+    "left = %d, top = %d, width = %d, height = %d\n",
+    update->rect.left, update->rect.top,
+    update->rect.width, update->rect.height );
+  */
+
 	if( update->image == imagedisplay->srgb )  
 		gtk_widget_queue_draw_area( GTK_WIDGET( update->imagedisplay ),
-			update->rect.left, update->rect.top,
-			update->rect.width, update->rect.height );
+			update->rect.left / imagedisplay->device_scale,
+			update->rect.top / imagedisplay->device_scale,
+			update->rect.width / imagedisplay->device_scale,
+			update->rect.height / imagedisplay->device_scale );
 
 	g_free( update );
 
@@ -354,6 +385,13 @@ static void
 imagedisplay_render_notify( VipsImage *image, VipsRect *rect, void *client )
 {
 	Imagedisplay *imagedisplay = (Imagedisplay *) client;
+
+  /*
+  printf( "imagedisplay_render_notify: "
+    "left = %d, top = %d, width = %d, height = %d\n",
+    rect->left, rect->top,
+    rect->width, rect->height );
+  */
 
 	/* We can come here after imagedisplay has junked this image and
 	 * started displaying another. Check the image is still correct.
@@ -375,7 +413,7 @@ get_pyramid_level( Imagedisplay *imagedisplay, float* mag )
 {
   int level = 0, mag2 = 1, i;
   printf("get_pyramid_level: mag=%f\n", -imagedisplay->mag);
-  while(mag2*2 <= -imagedisplay->mag) {
+  while(mag2*2 < -imagedisplay->mag) {
     level += 1;
     mag2 *= 2;
     printf("get_pyramid_level: level=%d mag2=%d\n", level, mag2);
@@ -399,6 +437,8 @@ imagedisplay_display_image( Imagedisplay *imagedisplay, VipsImage *in )
 {
 	VipsImage *image;
 	VipsImage *x;
+
+	printf("imagedisplay_display_image: mag=%f\n", imagedisplay->mag);
 
 	/* image redisplays the head of the pipeline. Hold a ref to it as we
 	 * work.
@@ -429,7 +469,7 @@ imagedisplay_display_image( Imagedisplay *imagedisplay, VipsImage *in )
     printf("imagedisplay_display_image: pyrmid level: %dx%d resizefac=%f\n",
         image->Xsize, image->Ysize, resizefac);
 
-		if( vips_resize( image, &x, resizefac, NULL ) ) {
+		if( vips_resize( image, &x, resizefac, "kernel", VIPS_KERNEL_CUBIC, NULL ) ) {
 			g_object_unref( image );
 			return( NULL ); 
 		}
@@ -468,10 +508,8 @@ imagedisplay_srgb_image( Imagedisplay *imagedisplay, VipsImage *in,
 	image = in;
 	g_object_ref( image ); 
 
-	/* This won't work for CMYK, you need to mess about with ICC profiles
-	 * for that, but it will work for everything else.
-	 */
-	if( vips_icc_transform_float( image, &x, "sRGB-elle-V2-srgbtrc.icc", NULL ) ) {
+	/*
+	if( vips_icc_transform_float( image, &x, sRGBProfile(), NULL ) ) {
 		g_object_unref( image );
 	  printf("vips_icc_transform failed.\n");
 		return( NULL ); 
@@ -479,6 +517,7 @@ imagedisplay_srgb_image( Imagedisplay *imagedisplay, VipsImage *in,
   printf("vips_icc_transform: image=%p x=%p\n", image, x);
   VIPS_UNREF( image );
 	image = x;
+	*/
 
 	/* Convert to uchar
 	 *
@@ -565,8 +604,8 @@ imagedisplay_update_conversion( Imagedisplay *imagedisplay )
 		printf( "** new region %p\n", imagedisplay->srgb_region );
 
 		gtk_widget_set_size_request( GTK_WIDGET( imagedisplay ),
-			imagedisplay->display->Xsize, 
-			imagedisplay->display->Ysize );
+			imagedisplay->display->Xsize / imagedisplay->device_scale,
+			imagedisplay->display->Ysize / imagedisplay->device_scale );
 
 		//gtk_widget_queue_draw( GTK_WIDGET( imagedisplay ) ); 
 	}
@@ -598,29 +637,84 @@ imagedisplay_posteval( VipsImage *image,
 		imagedisplay_signals[SIG_POSTLOAD], 0, progress );
 }
 
+
 static void
 imagedisplay_attach_progress( Imagedisplay *imagedisplay )
 {
-	g_assert( !imagedisplay->preeval_sig );
-	g_assert( !imagedisplay->eval_sig );
-	g_assert( !imagedisplay->posteval_sig );
+  g_assert( !imagedisplay->preeval_sig );
+  g_assert( !imagedisplay->eval_sig );
+  g_assert( !imagedisplay->posteval_sig );
 
-	/* Attach an eval callback: this will tick down if we 
-	 * have to decode this image.
-	 */
-	vips_image_set_progress( imagedisplay->image, TRUE ); 
-	imagedisplay->preeval_sig = 
-		g_signal_connect( imagedisplay->image, "preeval",
-			G_CALLBACK( imagedisplay_preeval ), 
-			imagedisplay );
-	imagedisplay->eval_sig = 
-		g_signal_connect( imagedisplay->image, "eval",
-			G_CALLBACK( imagedisplay_eval ), 
-			imagedisplay );
-	imagedisplay->posteval_sig = 
-		g_signal_connect( imagedisplay->image, "posteval",
-			G_CALLBACK( imagedisplay_posteval ), 
-			imagedisplay );
+  /* Attach an eval callback: this will tick down if we
+   * have to decode this image.
+   */
+  vips_image_set_progress( imagedisplay->image, TRUE );
+  imagedisplay->preeval_sig =
+    g_signal_connect( imagedisplay->image, "preeval",
+      G_CALLBACK( imagedisplay_preeval ),
+      imagedisplay );
+  imagedisplay->eval_sig =
+    g_signal_connect( imagedisplay->image, "eval",
+      G_CALLBACK( imagedisplay_eval ),
+      imagedisplay );
+  imagedisplay->posteval_sig =
+    g_signal_connect( imagedisplay->image, "posteval",
+      G_CALLBACK( imagedisplay_posteval ),
+      imagedisplay );
+}
+
+
+static void
+imagedisplay_cache_image( VipsImage* in, VipsImage** out)
+{
+  *out = NULL;
+  VipsImage* cached;
+  int width = in->Xsize;
+  int height = in->Ysize;
+
+  //size = (width>height) ? width : height;
+  size_t imgsz = VIPS_IMAGE_SIZEOF_PEL(in)*width*height;
+  size_t imgmax = 500*1024*1024;
+  int memory_storage = (imgsz < imgmax) ? 1 : 0;
+  int fd = -1;
+  char fname[500]; fname[0] = '\0';
+
+  if( memory_storage ) {
+    GTimer *timer;
+    gdouble elapsed;
+    gulong micros;
+    printf("Cache image saved in..."); fflush(stdout);
+    timer = g_timer_new ();
+    size_t array_sz;
+    void* mem_array = vips_image_write_to_memory( in, &array_sz );
+
+    cached = vips_image_new_from_memory( mem_array, array_sz, width, height, in->Bands, in->BandFmt );
+    g_signal_connect( cached, "postclose", G_CALLBACK(free_mem_array), mem_array );
+    elapsed = g_timer_elapsed (timer, &micros);
+    g_timer_destroy (timer);
+    printf(" %fs\n", elapsed); fflush(stdout);
+  } else {
+    char* tempName = vips__temp_name("%s.v");
+
+    vips_image_write_to_file(in, tempName, 0, NULL);
+
+    cached = vips_image_new_from_file(tempName, 0, NULL);
+    vips_image_set_delete_on_close(cached, TRUE);
+
+    g_free(tempName);
+    g_assert(cached);
+  }
+  //VIPS_UNREF(in);
+
+  vips_copy( cached, out,
+      "format", in->BandFmt,
+       "bands", in->Bands,
+       "coding", in->Coding,
+       "interpretation", in->Type,
+       NULL );
+  VIPS_UNREF( cached );
+
+  vips_copy_metadata(in, *out);
 }
 
 int
@@ -635,11 +729,14 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 
 		if( (path = g_file_get_path( file )) ) {
 			if( !(imagedisplay->image = 
-				vips_image_new_from_file( path, NULL )) ) {
+				vips_image_new_from_file( path, "access", VIPS_ACCESS_RANDOM, NULL )) ) {
 				g_free( path ); 
 				return( -1 );
 			}
 			g_free( path ); 
+		  // Make sure that the sequential access hint is not set for the opened image
+		  // see https://github.com/jcupitt/libvips/issues/840
+		  vips_image_remove(imagedisplay->image, VIPS_META_SEQUENTIAL);
 		}
 		else if( g_file_load_contents( file, NULL, 
 			&contents, &length, NULL, NULL ) ) {
@@ -660,6 +757,7 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 			return( -1 );
 		}
 
+    VipsImage* floatimg;
 		/**/
     float norm = 1;
     switch(imagedisplay->image->BandFmt) {
@@ -669,7 +767,6 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
     default: break;
     }
 
-    VipsImage* floatimg;
     if( vips_linear1(imagedisplay->image, &floatimg, norm, (float)0, NULL) ) {
       vips_error( "imagedisplay",
               "vips_linear1() failed" );
@@ -677,12 +774,12 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
     }
     VIPS_UNREF(imagedisplay->image);
     imagedisplay->image = floatimg;
-
+    /**/
 
     /* This won't work for CMYK, you need to mess about with ICC profiles
      * for that, but it will work for everything else.
      */
-    if( vips_icc_transform_float( imagedisplay->image, &floatimg, "Rec2020-elle-V4-g10.icc", NULL ) ) {
+    if( vips_icc_transform_float( imagedisplay->image, &floatimg, linRec2020Profile(), NULL ) ) {
       vips_error( "imagedisplay",
               "vips_icc_transform_float() failed" );
       return -1;
@@ -691,11 +788,22 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
     imagedisplay->image = floatimg;
     /**/
 
-    int width = imagedisplay->image->Xsize;
-    int height = imagedisplay->image->Xsize;
-    int size;
+    VipsImage* cached;
+    imagedisplay_cache_image(imagedisplay->image, &floatimg);
+    VIPS_UNREF(imagedisplay->image);
+    imagedisplay->image = floatimg;
 
-#ifdef USE_PYRAMID
+#if defined(USE_PYRAMID)
+    int size;
+    int level_max = 1;
+    int width_min = width;
+    int height_min = height;
+    while(width_min > 256 || height_min > 256) {
+      level_max += 1;
+      width_min /= 2;
+      height_min /= 2;
+    }
+
     if(imagedisplay->pyramid) {
       int i = 0;
       while(imagedisplay->pyramid[i]) {
@@ -704,22 +812,16 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
       g_free(imagedisplay->pyramid);
     }
 
-    int level = 1;
-    while(width > 256 || height > 256) {
-      level += 1;
-      width /= 2;
-      height /= 2;
-    }
-
-    imagedisplay->pyramid = g_malloc(sizeof(VipsImage*)*(level+1));
+    imagedisplay->pyramid = g_malloc(sizeof(VipsImage*)*(level_max+1));
 
     g_object_ref(floatimg);
+
     imagedisplay->pyramid[0] = floatimg;
-    imagedisplay->pyramid[level] = NULL;
+    imagedisplay->pyramid[level_max] = NULL;
 
-    printf("Computing pyramid levels...");
+    printf("Computing pyramid levels...\n"); fflush(stdout);
 
-    int li; for(li = 1; li < level; li++) {
+    int li; for(li = 1; li < level_max; li++) {
       VipsImage* scaled;
       if( vips_shrink( imagedisplay->pyramid[li-1], &scaled, 2, 2, NULL ) ) {
         imagedisplay->pyramid[li] = NULL;
@@ -728,8 +830,8 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
 
       width = scaled->Xsize;
       height = scaled->Ysize;
-      size = (width>height) ? width : height;
 
+      size = (width>height) ? width : height;
       size_t imgsz = VIPS_IMAGE_SIZEOF_PEL(scaled)*width*height;
       size_t imgmax = 500*1024*1024;
       int memory_storage = (imgsz < imgmax) ? 1 : 0;
@@ -739,11 +841,19 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
       VipsImage* out;
 
       if( memory_storage ) {
+        GTimer *timer;
+        gdouble elapsed;
+        gulong micros;
+        printf("Level %d image saved in...", li); fflush(stdout);
+        timer = g_timer_new ();
         size_t array_sz;
         void* mem_array = vips_image_write_to_memory( scaled, &array_sz );
 
         out = vips_image_new_from_memory( mem_array, array_sz, width, height, scaled->Bands, scaled->BandFmt );
         g_signal_connect( out, "postclose", G_CALLBACK(free_mem_array), mem_array );
+        elapsed = g_timer_elapsed (timer, &micros);
+        g_timer_destroy (timer);
+        printf(" %fs\n", elapsed); fflush(stdout);
       } else {
         char* tempName = vips__temp_name("%s.v");
 
@@ -765,7 +875,7 @@ imagedisplay_set_file( Imagedisplay *imagedisplay, GFile *file )
            NULL );
       VIPS_UNREF( out );
 
-      vips_copy_metadata(floatimg, imagedisplay->pyramid[li]);
+      vips_copy_metadata(imagedisplay->image, imagedisplay->pyramid[li]);
     }
 #endif
 
@@ -794,8 +904,6 @@ imagedisplay_set_mag( Imagedisplay *imagedisplay, float mag )
 		printf( "imagedisplay_set_mag: %f\n", mag );
 
 		imagedisplay->mag = mag;
-		if( imagedisplay->mag < 0 ) imagedisplay->mag /= imagedisplay->device_scale;
-		else imagedisplay->mag *= imagedisplay->device_scale;
 		imagedisplay_update_conversion( imagedisplay );
 	}
 }

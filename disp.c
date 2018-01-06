@@ -168,12 +168,14 @@ main( int argc, char **argv )
 	//vips_concurrency_set(1);
 	printf("VIPS cpmcurrency: %d\n", vips_concurrency_get());
 
+	/*
 	g_log_set_always_fatal( 
 		G_LOG_FLAG_RECURSION |
 		G_LOG_FLAG_FATAL |
 		G_LOG_LEVEL_ERROR |
-		G_LOG_LEVEL_CRITICAL/* |
-		G_LOG_LEVEL_WARNING*/ );
+		G_LOG_LEVEL_CRITICAL |
+		G_LOG_LEVEL_WARNING );
+	 */
 
 	disp = disp_new();
 

@@ -12,6 +12,8 @@ vipsdisp_SOURCES = \
 	imagepresent.h \
 	imagedisplay.c \
 	imagedisplay.h \
+	colorspaces.c \
+	colorspaces.h \
 	icc_transform_float.c \
 	icc_transform_float.h
 
@@ -24,6 +26,8 @@ resize_SOURCES = \
 	imagepresent.h \
 	imagedisplay.c \
 	imagedisplay.h \
+	colorspaces.c \
+	colorspaces.h \
 	icc_transform_float.c \
 	icc_transform_float.h
 

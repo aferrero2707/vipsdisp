@@ -40,13 +40,10 @@
 #ifdef HAVE_LCMS2
 
 #include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 #include <assert.h>
-
-/* Has to be before VIPS to avoid nameclashes.
- */
-#include <lcms2.h>
 
 #include <vips/vips.h>
 
@@ -123,7 +120,6 @@ typedef struct _VipsIccTransformFloat {
 
   gboolean embedded;
   char *input_profile_filename;
-  char *output_profile_filename;
 
   cmsHPROFILE in_profile;
   cmsHPROFILE out_profile;
@@ -349,6 +345,8 @@ vips_icc_transform_float_gen( VipsRegion *or,
   printf("vips_icc_transform_float_gen: ir->im->BandFmt=%d or->im->BandFmt=%d\n",
       ir->im->BandFmt, or->im->BandFmt);
   */
+  //printf("vips_icc_transform_float_gen: r=%dx%d+%d+%d\n",
+  //    r->width, r->height, r->left, r->top);
   if( vips_region_prepare( ir, r ) )
     return( -1 );
 
@@ -358,9 +356,8 @@ vips_icc_transform_float_gen( VipsRegion *or,
     p = (float*)VIPS_REGION_ADDR( ir, r->left, r->top + y );
     q = (float*)VIPS_REGION_ADDR( or, r->left, r->top + y );
 
-    //memcpy(q, p, VIPS_IMAGE_SIZEOF_PEL(ir->im)*r->width);
-
-    cmsDoTransform( icc->trans, p, q, r->width );
+    memcpy(q, p, VIPS_IMAGE_SIZEOF_PEL(ir->im)*r->width);
+    //cmsDoTransform( icc->trans, p, q, r->width );
   }
 
   VIPS_GATE_STOP( "vips_icc_transform_float_gen: work" );
@@ -490,15 +487,16 @@ vips_icc_transform_float_build( VipsObject *object )
     return( -1 );
   }
 
-  if( transform->output_profile_filename ) {
-    if( !(icc->out_profile = cmsOpenProfileFromFile(
-      transform->output_profile_filename, "r" )) ) {
+  /*
+  if( transform->output_profile_size > 0 && transform->output_profile_data ) {
+    if( !(icc->out_profile = cmsOpenProfileFromMem(
+      transform->output_profile_data, transform->output_profile_size )) ) {
       vips_error( class->nickname,
-        _( "unable to open profile \"%s\"" ),
-        transform->output_profile_filename );
+        _( "unable to open output profile" ) );
       return( -1 );
     }
   }
+  */
 
   vips_check_intent( class->nickname,
     icc->in_profile, icc->intent, LCMS_USED_AS_INPUT );
@@ -634,12 +632,17 @@ vips_icc_transform_float_build( VipsObject *object )
         cmsGetColorSpace( icc->out_profile ) );
       return( -1 );
     }
-  if( icc->output_profile_filename )
-    if( vips_icc_transform_float_attach_profile( out,
-      icc->output_profile_filename ) ) {
-      g_object_unref( out );
-      return( -1 );
-    }
+  if( icc->out_profile ) {
+    void* profile_data;
+    cmsUInt32Number profile_size;
+
+    cmsSaveProfileToMem( icc->out_profile, NULL, &profile_size);
+    profile_data = malloc( profile_size );
+    cmsSaveProfileToMem( icc->out_profile, profile_data, &profile_size);
+
+    vips_image_set_blob( out, VIPS_META_ICC_NAME,
+      (VipsCallbackFn) g_free, profile_data, profile_size );
+  }
 
   if( vips_image_generate( out,
     vips_start_one, vips_icc_transform_float_gen, vips_stop_one,
@@ -694,12 +697,11 @@ vips_icc_transform_float_class_init( VipsIccTransformFloatClass *class )
     VIPS_ARGUMENT_REQUIRED_OUTPUT,
     G_STRUCT_OFFSET( VipsIccTransformFloat, out ) );
 
-  VIPS_ARG_STRING( class, "output_profile", 110,
+  VIPS_ARG_POINTER( class, "output_profile", 110,
     _( "Output profile" ),
-    _( "Filename to load output profile from" ),
+    _( "Memory address of output profile" ),
     VIPS_ARGUMENT_REQUIRED_INPUT,
-    G_STRUCT_OFFSET( VipsIccTransformFloat, output_profile_filename ),
-    NULL );
+    G_STRUCT_OFFSET( VipsIccTransformFloat, out_profile ) );
 
   VIPS_ARG_BOOL( class, "embedded", 120,
     _( "Embedded" ),
@@ -723,6 +725,7 @@ vips_icc_transform_float_init( VipsIccTransformFloat *icc )
 {
 	icc->intent = VIPS_INTENT_RELATIVE;
 	icc->embedded = TRUE;
+  icc->out_profile = NULL;
 }
 
 
@@ -772,7 +775,7 @@ vips_icc_transform_float_init( VipsIccTransformFloat *icc )
  */
 int
 vips_icc_transform_float( VipsImage *in, VipsImage **out,
-	const char *output_profile, ... )
+    cmsHPROFILE output_profile, ... )
 {
 	va_list ap;
 	int result;
